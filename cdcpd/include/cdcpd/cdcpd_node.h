@@ -8,8 +8,7 @@
 #include <jsk_recognition_msgs/BoundingBox.h>
 #include <moveit/collision_detection/collision_common.h>
 #include <moveit/collision_detection/collision_tools.h>
-#include <moveit/collision_detection_bullet/collision_detector_allocator_bullet.h>
-#include <moveit/collision_detection_bullet/collision_env_bullet.h>
+#include <moveit/collision_detection_fcl/collision_detector_allocator_fcl.h>
 #include <moveit/planning_scene_monitor/planning_scene_monitor.h>
 #include <moveit_visual_tools/moveit_visual_tools.h>
 #include <opencv2/imgproc/types_c.h>
@@ -64,6 +63,7 @@ struct CDCPD_Node_Parameters
     std::string const grippers_info_filename;
     int const num_points;
     float const max_rope_length;
+    float const initial_rope_z;
     float const length_initial_cloth;
     float const width_initial_cloth;
     float const grid_size_initial_guess_cloth;

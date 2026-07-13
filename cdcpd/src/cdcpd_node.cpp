@@ -82,6 +82,7 @@ CDCPD_Node_Parameters::CDCPD_Node_Parameters(ros::NodeHandle& nh, ros::NodeHandl
             ROSHelpers::GetParamRequired<std::string>(ph, "grippers_info", "cdcpd_node")),
       num_points(ROSHelpers::GetParam<int>(nh, "rope_num_points", 11)),
       max_rope_length(ROSHelpers::GetParam<float>(nh, "max_rope_length", 1.0)),
+      initial_rope_z(ROSHelpers::GetParam<float>(nh, "initial_rope_z", 1.0)),
       length_initial_cloth(ROSHelpers::GetParam<float>(ph, "length_initial_cloth", 0.0)),
       width_initial_cloth(ROSHelpers::GetParam<float>(ph, "width_initial_cloth", 0.0)),
       grid_size_initial_guess_cloth(
@@ -147,8 +148,8 @@ CDCPD_Moveit_Node::CDCPD_Moveit_Node(std::string const& robot_namespace)
         end_position = start_position;
         end_position[1] += node_params.max_rope_length;
     } else if (gripper_count == 0u) {
-        start_position << -node_params.max_rope_length / 2, 0, 1.0;
-        end_position << node_params.max_rope_length / 2, 0, 1.0;
+        start_position << -node_params.max_rope_length / 2, 0, node_params.initial_rope_z;
+        end_position << node_params.max_rope_length / 2, 0, node_params.initial_rope_z;
     }
 
     initialize_deformable_object_configuration(start_position, end_position);
@@ -416,8 +417,11 @@ ObstacleConstraints CDCPD_Moveit_Node::get_moveit_obstacle_constriants(
       }
     }
 
+    // NOTE: swapped from Bullet to FCL. This workspace's MoveIt (melodic-devel) predates the
+    // CollisionEnv refactor and only has an incomplete/unwired collision_detection_bullet stub
+    // (missing headers, no CMake wiring); FCL is the collision backend actually available here.
     planning_scene->setActiveCollisionDetector(
-        collision_detection::CollisionDetectorAllocatorBullet::create());
+        collision_detection::CollisionDetectorAllocatorFCL::create());
 
     // attach to the robot base link, sort of hacky but MoveIt only has API for checking robot vs self/world,
     // so we have to make the tracked points part of the robot, hence "attached collision objects"
@@ -435,7 +439,11 @@ ObstacleConstraints CDCPD_Moveit_Node::get_moveit_obstacle_constriants(
       // FIXME: not moveit frame, but the base link_frame, could those be different?
       auto sphere = std::make_shared<shapes::Box>(0.01, 0.01, 0.01);
 
-      robot_state.attachBody(collision_body_name, Eigen::Isometry3d::Identity(), {sphere},
+      // NOTE: this workspace's MoveIt predates the attachBody(id, pose, shapes, ...) overload
+      // that takes a leading body pose; since that pose would always be Identity here, using the
+      // older attachBody(id, shapes, shape_poses, ...) overload (shape poses relative to the
+      // link directly) is equivalent.
+      robot_state.attachBody(collision_body_name, {sphere},
                              {tracked_point_pose_moveit_frame}, std::vector<std::string>{},
                              "base_link");
     }

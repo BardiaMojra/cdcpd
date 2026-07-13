@@ -108,8 +108,13 @@ if (pybind11_catkin_FOUND)
 endif()
 
 ### Installation
-configure_file(cdcpd-config.cmake.in "${PROJECT_BINARY_DIR}/cdcpd-config.cmake" @ONLY)
-install(TARGETS cdcpd EXPORT cdcpd-targets DESTINATION lib/${PROJECT_NAME})
+# NOTE: the standalone (non-catkin) install(TARGETS ... EXPORT ...) / install(EXPORT ...) export
+# was removed here: cdcpd's PUBLIC include dirs pull in ${catkin_INCLUDE_DIRS}, which for
+# header-only catkin deps (sdf_tools, arc_utilities, smmap_models, ...) are raw source-tree
+# paths. CMake's install(EXPORT) refuses to export a target with source-tree interface include
+# dirs, which breaks configure even though nothing here runs `catkin_make install`. catkin's own
+# catkin_package() above already generates a cdcpdConfig.cmake for ROS-style find_package(cdcpd).
+install(TARGETS cdcpd DESTINATION lib/${PROJECT_NAME})
 install(FILES
         include/cdcpd/deformable_object_configuration.h
         include/cdcpd/cdcpd.h
@@ -118,9 +123,6 @@ install(FILES
         include/cdcpd/past_template_matcher.h
         DESTINATION
         include/cdcpd)
-install(FILES "${PROJECT_BINARY_DIR}/cdcpd-config.cmake" DESTINATION lib/${PROJECT_NAME})
-
-install(EXPORT cdcpd-targets NAMESPACE cdcpd:: DESTINATION lib/${PROJECT_NAME})
 
 add_executable(cdcpd_node
         src/cdcpd_ros/camera_sub.cpp
