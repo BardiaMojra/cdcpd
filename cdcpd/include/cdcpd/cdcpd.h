@@ -127,6 +127,25 @@ class CDCPD {
                     const smmap::AllGrippersSinglePose &q_config = {}, const Eigen::MatrixXi &gripper_idx = {},
                     int pred_choice = 0);
 
+  // Added for standalone (no-ROS) batch evaluation: the above points-based operator() still
+  // constructs a SegmenterHSV internally (segmenter.h's SegmenterHSV/SegmenterParameters both
+  // take a ros::NodeHandle& and read their HSV thresholds via the ROS parameter server, so that
+  // path still needs a live roscore even though it never publishes/subscribes to anything).
+  // track_preextracted_cloud() is for input that has ALREADY been segmented/cleaned upstream
+  // (e.g. this project's own dlo_perception_v022.py DBSCAN-extracted DLO cloud) -- it skips
+  // SegmenterHSV entirely and treats `extracted_points` directly as what SegmenterHSV's output
+  // would have been, then runs the exact same downsample -> predict -> cpd -> Optimizer sequence
+  // as the points-based operator() above. No ros::NodeHandle/parameter-server access anywhere in
+  // this path, so it's safe to call after a bare `ros::init()` with no reachable master (only
+  // needed at all because CDCPD's own constructor still stores a NodeHandle member -- see
+  // standalone_batch_eval.cpp for why that alone doesn't require a live roscore).
+  Output track_preextracted_cloud(const PointCloud::Ptr &extracted_points,
+                    const PointCloud::Ptr template_cloud,
+                    ObstacleConstraints points_normals, double max_segment_length,
+                    const smmap::AllGrippersSinglePoseDelta &q_dot = {},
+                    const smmap::AllGrippersSinglePose &q_config = {}, const Eigen::MatrixXi &gripper_idx = {},
+                    int pred_choice = 0);
+
   // The common implementation that the above overloads call
   Output operator()(const cv::Mat &rgb, const cv::Mat &depth, const cv::Mat &mask, const cv::Matx33d &intrinsics,
                     const PointCloud::Ptr template_cloud, ObstacleConstraints points_normals, double max_segment_length,

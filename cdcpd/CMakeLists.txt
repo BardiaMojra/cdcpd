@@ -131,6 +131,15 @@ add_executable(cdcpd_node
 add_dependencies(cdcpd_node ${catkin_EXPORTED_TARGETS})
 target_link_libraries(cdcpd_node PRIVATE cdcpd ${catkin_LIBRARIES})
 
+# Standalone (no ROS node, no roscore needed) batch evaluation driver -- see
+# src/cdcpd_batch_eval.cpp's header comment. Links ros::init() only to satisfy CDCPD's
+# constructor storing a ros::NodeHandle member; never contacts a master.
+add_executable(cdcpd_batch_eval
+        src/cdcpd_batch_eval.cpp
+        )
+add_dependencies(cdcpd_batch_eval ${catkin_EXPORTED_TARGETS})
+target_link_libraries(cdcpd_batch_eval PRIVATE cdcpd ${catkin_LIBRARIES})
+
 
 ## Testing
 if (CATKIN_ENABLE_TESTING AND CDCPD_TESTING)

@@ -688,6 +688,86 @@ CDCPD::Output CDCPD::operator()(const PointCloudRGB::Ptr &points, const PointClo
   return CDCPD::Output{points, cloud, cloud_downsampled, cdcpd_cpd, cdcpd_pred, cdcpd_out, status};
 }
 
+// See cdcpd.h's declaration comment for why this exists (SegmenterHSV needs a live ROS parameter
+// server; input that's already segmented upstream shouldn't be re-segmented anyway). Identical to
+// the points-based operator() above from the VoxelGrid downsample step onward -- only the HSV
+// segmentation step is skipped, since `extracted_points` already IS what that step would have
+// produced.
+CDCPD::Output CDCPD::track_preextracted_cloud(const PointCloud::Ptr &extracted_points,
+                                const PointCloud::Ptr template_cloud, ObstacleConstraints obstacle_constraints,
+                                const double max_segment_length, const smmap::AllGrippersSinglePoseDelta &q_dot,
+                                const smmap::AllGrippersSinglePose &q_config, const Eigen::MatrixXi &gripper_idx,
+                                const int pred_choice) {
+  this->gripper_idx = gripper_idx;
+  total_frames_ += 1;
+
+  ROS_INFO_STREAM_THROTTLE_NAMED(1, LOGNAME + ".points",
+      "pre-extracted cloud: (" << extracted_points->height << " x " << extracted_points->width << ")");
+
+  /// Perform VoxelGrid filter downsampling -- same leaf size as the points-based operator(),
+  /// unrelated to scene-extraction/cropping, just keeps registration at a consistent point
+  /// density.
+  PointCloud::Ptr cloud_downsampled(new PointCloud);
+  pcl::VoxelGrid<pcl::PointXYZ> sor;
+  sor.setInputCloud(extracted_points);
+  sor.setLeafSize(0.02f, 0.02f, 0.02f);
+  sor.filter(*cloud_downsampled);
+  ROS_INFO_STREAM_THROTTLE_NAMED(1, LOGNAME + ".points",
+                                 "Points in filtered point cloud: " << cloud_downsampled->width);
+
+  const Matrix3Xf Y = template_cloud->getMatrixXfMap().topRows(3);
+  auto const Y_emit_prior = Eigen::VectorXf::Ones(template_cloud->size());
+
+  if (cloud_downsampled->width == 0) {
+    ROS_ERROR_STREAM_NAMED(LOGNAME, "No points in the pre-extracted cloud");
+    PointCloud::Ptr cdcpd_out = mat_to_cloud(Y);
+    PointCloud::Ptr cdcpd_cpd = mat_to_cloud(Y);
+    PointCloud::Ptr cdcpd_pred = mat_to_cloud(Y);
+
+    return CDCPD::Output{nullptr, extracted_points, cloud_downsampled, cdcpd_cpd, cdcpd_pred, cdcpd_out,
+        OutputStatus::NoPointInFilteredCloud};
+  }
+
+  Matrix3Xf X = cloud_downsampled->getMatrixXfMap().topRows(3);
+
+  std::vector<FixedPoint> pred_fixed_points;
+  auto const num_grippers = std::min(
+      static_cast<size_t>(gripper_idx.cols()), static_cast<size_t>(q_config.size()));
+  for (auto col = 0u; col < num_grippers; ++col) {
+    FixedPoint pt;
+    pt.template_index = gripper_idx(0, col);
+    pt.position(0) = q_config[col](0, 3);
+    pt.position(1) = q_config[col](1, 3);
+    pt.position(2) = q_config[col](2, 3);
+    pred_fixed_points.push_back(pt);
+  }
+
+  Matrix3Xf TY, TY_pred;
+  TY_pred = predict(Y.cast<double>(), q_dot, q_config, pred_choice).cast<float>();
+  TY = cpd(X, Y, TY_pred, Y_emit_prior);
+
+  Optimizer opt(original_template, Y, start_lambda, obstacle_cost_weight, fixed_points_weight);
+  auto const opt_out = opt(TY, template_edges, pred_fixed_points, obstacle_constraints,
+      max_segment_length);
+  Matrix3Xf Y_opt = opt_out.first;
+  double objective_value = opt_out.second;
+
+  // NOTE: last_lower/upper_bounding_box is deliberately NOT updated here -- that bounding box
+  // only ever fed back into SegmenterHSV's next-frame ROI (see cdcpd_flow.pdf), which this method
+  // never calls, so updating it would be dead state with no consumer.
+
+  PointCloud::Ptr cdcpd_out = mat_to_cloud(Y_opt);
+  PointCloud::Ptr cdcpd_cpd = mat_to_cloud(TY);
+  PointCloud::Ptr cdcpd_pred = mat_to_cloud(TY_pred);
+  auto status = OutputStatus::Success;
+  if (total_frames_ > 10 and objective_value > objective_value_threshold_) {
+    ROS_WARN_STREAM_NAMED(LOGNAME + ".objective", "Objective too high!");
+    status = OutputStatus::ObjectiveTooHigh;
+  }
+
+  return CDCPD::Output{nullptr, extracted_points, cloud_downsampled, cdcpd_cpd, cdcpd_pred, cdcpd_out, status};
+}
+
 CDCPD::Output CDCPD::operator()(const Mat &rgb, const Mat &depth, const Mat &mask, const cv::Matx33d &intrinsics,
                                 const PointCloud::Ptr template_cloud, ObstacleConstraints obstacle_constraints,
                                 const double max_segment_length, const smmap::AllGrippersSinglePoseDelta &q_dot,

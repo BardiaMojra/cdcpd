@@ -3,3 +3,4 @@
 demos/rosbags
 demos/rosbags_compressed
 .vscode
+*.bak-*
