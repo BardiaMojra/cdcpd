@@ -43,7 +43,15 @@ find_package(OpenCV REQUIRED)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 find_package(GUROBI REQUIRED)
 find_package(FAISS REQUIRED)
-find_package(CGAL REQUIRED COMPONENTS Core Qt5)
+# arm64 (dgx): Qt5 there is GLES-only and CGAL's Qt viewer needs desktop GL, so skip the Qt5
+# component (the viewer is never called). x86 hosts (cbox) keep the original setup.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+  find_package(CGAL REQUIRED COMPONENTS Core)
+  set(CDCPD_CGAL_QT5 "")
+else()
+  find_package(CGAL REQUIRED COMPONENTS Core Qt5)
+  set(CDCPD_CGAL_QT5 CGAL::CGAL_Qt5)
+endif()
 find_package(Qt5 QUIET COMPONENTS Qt5 Core Xml Script OpenGL Svg)
 find_package(PCL 1.8 REQUIRED COMPONENTS common io filters visualization features kdtree)
 
@@ -86,7 +94,7 @@ target_link_libraries(cdcpd PUBLIC
         ${FAISS_LIBRARY}
         ${OpenCV_LIBS}
         CGAL::CGAL
-        CGAL::CGAL_Qt5
+        ${CDCPD_CGAL_QT5}
         yaml-cpp
         )
 
